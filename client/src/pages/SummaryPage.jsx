@@ -69,7 +69,10 @@ function SummaryPage() {
         <header className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Today Summary</h1>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Operational snapshot of today&apos;s milk-delivery performance with a clear breakdown of completed, pending, and failed work.</p>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+              Operational snapshot of today&apos;s delivery performance with a clear breakdown of waiting work, active
+              route progress, completed drops, failed orders, and earnings.
+            </p>
           </div>
           <div className="rounded-full border border-emerald-200 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wide text-emerald-700">
             Daily operations view
@@ -78,8 +81,8 @@ function SummaryPage() {
 
         {loading && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-              {[1, 2, 3, 4, 5].map((item) => (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
+              {[1, 2, 3, 4, 5, 6].map((item) => (
                 <article key={item} className="rounded-[26px] border border-emerald-100 bg-white/95 p-4 shadow-[0_22px_48px_-34px_rgba(11,28,48,0.42)]">
                   <SkeletonBlock className="h-4 w-24" />
                   <SkeletonBlock className="mt-4 h-10 w-28" />
@@ -109,10 +112,11 @@ function SummaryPage() {
 
         {!loading && !error && summary && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
               <StatCard label="Today's Deliveries" value={summary.totalDeliveries} accent="emerald" />
-              <StatCard label="Completed" value={summary.completed} accent="blue" />
               <StatCard label="Pending" value={summary.pending} accent="amber" />
+              <StatCard label="Active Route" value={summary.active || 0} accent="emerald" />
+              <StatCard label="Completed" value={summary.completed} accent="blue" />
               <StatCard label="Failed" value={summary.failed} accent="rose" />
               <StatCard label="Today's Earnings" value={formatCurrency(summary.earnings)} accent="emerald" />
             </div>

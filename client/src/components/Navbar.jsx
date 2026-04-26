@@ -1,11 +1,16 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 
-const navLinks = [
-  { label: 'Dashboard', to: '/' },
+const agentNavLinks = [
+  { label: 'Dashboard', to: '/dashboard' },
   { label: 'Route', to: '/route' },
   { label: 'Assigned Deliveries', to: '/assigned-deliveries' },
   { label: 'Summary', to: '/summary' },
+];
+
+const adminNavLinks = [
+  { label: 'Dashboard', to: '/dashboard' },
+  { label: 'Admin', to: '/admin' },
 ];
 
 const navLinkClass = ({ isActive }) =>
@@ -16,6 +21,9 @@ const navLinkClass = ({ isActive }) =>
 function Navbar({ title }) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const homePath = isAdmin ? '/admin' : '/dashboard';
+  const navLinks = isAdmin ? adminNavLinks : agentNavLinks;
 
   const handleLogout = () => {
     logout();
@@ -27,7 +35,7 @@ function Navbar({ title }) {
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-3">
-            <Link to="/" className="text-lg font-extrabold tracking-tight text-emerald-700 sm:text-xl">
+            <Link to={homePath} className="text-lg font-extrabold tracking-tight text-emerald-700 sm:text-xl">
               Aasapure Delivery Module
             </Link>
             <span className="hidden rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-700 sm:block">

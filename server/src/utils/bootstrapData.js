@@ -50,7 +50,10 @@ export const ensureDeliveryAssignments = async () => {
   ];
 
   const deliveries = await Delivery.find({
-    $or: [{ agentEmail: { $exists: false } }, { agentEmail: '' }],
+    $and: [
+      { status: { $ne: 'unassigned' } },
+      { $or: [{ agentEmail: { $exists: false } }, { agentEmail: '' }] },
+    ],
   });
 
   if (deliveries.length === 0) {

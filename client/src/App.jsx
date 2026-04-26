@@ -63,7 +63,7 @@ function App() {
         <Route
           path="/dashboard"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['agent']} redirectTo="/admin">
               <DashboardPage />
             </ProtectedRoute>
           }
@@ -71,7 +71,7 @@ function App() {
         <Route
           path="/admin"
           element={
-            <ProtectedRoute allowedRoles={['admin']}>
+            <ProtectedRoute allowedRoles={['admin']} redirectTo="/dashboard">
               <AdminDashboardPage />
             </ProtectedRoute>
           }
@@ -79,7 +79,7 @@ function App() {
         <Route
           path="/assigned-deliveries"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['agent']} redirectTo="/admin">
               <AssignedDeliveriesPage />
             </ProtectedRoute>
           }
@@ -95,7 +95,7 @@ function App() {
         <Route
           path="/route"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['agent']} redirectTo="/admin">
               <RoutePage />
             </ProtectedRoute>
           }
@@ -103,12 +103,19 @@ function App() {
         <Route
           path="/summary"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['agent']} redirectTo="/admin">
               <SummaryPage />
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route
+          path="*"
+          element={
+            <ProtectedRoute>
+              <RoleHomeRedirect />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </Suspense>
   );

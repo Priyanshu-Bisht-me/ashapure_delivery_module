@@ -35,3 +35,8 @@ export const createAdminDelivery = async (payload) => {
   const response = await axiosClient.post('/admin/deliveries', payload);
   return response.data;
 };
+
+export const assignAdminDelivery = async (deliveryId, payload) => {
+  const response = await axiosClient.patch(`/admin/deliveries/${deliveryId}/assign`, payload);
+  return response.data;
+};

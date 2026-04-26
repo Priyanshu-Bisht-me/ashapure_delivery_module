@@ -1,34 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { getDeliveryById, updateDeliveryStatus } from '../api/deliveryApi';
+import { useAuth } from '../auth/useAuth';
+import ConfirmationModal from '../components/ConfirmationModal';
 import Layout from '../components/Layout';
 import SkeletonBlock from '../components/SkeletonBlock';
 import StatusBadge from '../components/StatusBadge';
 import ToastMessage from '../components/ToastMessage';
-
-const statusOptions = [
-  { key: 'assigned', label: 'Assigned' },
-  { key: 'picked_up', label: 'Picked Up' },
-  { key: 'out_for_delivery', label: 'Out for Delivery' },
-  { key: 'delivered', label: 'Delivered' },
-  { key: 'failed', label: 'Failed' },
-];
-
-const transitionMap = {
-  assigned: ['picked_up', 'failed'],
-  picked_up: ['out_for_delivery', 'failed'],
-  out_for_delivery: ['delivered', 'failed'],
-  delivered: [],
-  failed: [],
-};
-
-const statusButtonClasses = {
-  assigned: 'bg-slate-100 text-slate-700 hover:bg-slate-200',
-  picked_up: 'bg-blue-100 text-blue-700 hover:bg-blue-200',
-  out_for_delivery: 'bg-amber-100 text-amber-700 hover:bg-amber-200',
-  delivered: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
-  failed: 'bg-rose-100 text-rose-700 hover:bg-rose-200',
-};
+import {
+  getAgentActions,
+  getDeliveryProgress,
+  getRouteStageSummary,
+  getStatusLabel,
+  getTimelineSteps,
+} from '../utils/deliveryWorkflow';
 
 const formatDate = (dateValue) => {
   if (!dateValue) {
@@ -40,12 +25,13 @@ const formatDate = (dateValue) => {
 
 function DeliveryDetailPage() {
   const { deliveryId } = useParams();
+  const { user } = useAuth();
   const [delivery, setDelivery] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updatingStatus, setUpdatingStatus] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
-  const [showFailureDialog, setShowFailureDialog] = useState(false);
+  const [modalAction, setModalAction] = useState(null);
   const [failureReason, setFailureReason] = useState('');
 
   const loadDelivery = useCallback(async () => {
@@ -92,18 +78,15 @@ function DeliveryDetailPage() {
       return undefined;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      setToast(null);
-    }, 3000);
-
+    const timeoutId = window.setTimeout(() => setToast(null), 3000);
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
 
-  const availableTransitions = useMemo(() => transitionMap[delivery?.status] || [], [delivery?.status]);
-
-  const showToast = (type, message) => {
-    setToast({ type, message });
-  };
+  const isAdmin = user?.role === 'admin';
+  const actions = useMemo(() => getAgentActions(delivery), [delivery]);
+  const progress = getDeliveryProgress(delivery);
+  const summary = getRouteStageSummary(delivery);
+  const timelineSteps = useMemo(() => getTimelineSteps(delivery), [delivery]);
 
   const submitStatusUpdate = async (payload) => {
     if (!delivery) {
@@ -117,48 +100,32 @@ function DeliveryDetailPage() {
       const updated = await updateDeliveryStatus(delivery._id, payload);
       setDelivery(updated);
       setFailureReason('');
-      setShowFailureDialog(false);
-      showToast('success', `Status updated to ${statusOptions.find((item) => item.key === updated.status)?.label || updated.status}.`);
+      setModalAction(null);
+      setToast({ type: 'success', message: `Status updated to ${getStatusLabel(updated.status)}.` });
     } catch (requestError) {
       const message = requestError.response?.data?.message || 'Failed to update status.';
       setError(message);
-      showToast('error', message);
+      setToast({ type: 'error', message });
     } finally {
       setUpdatingStatus('');
     }
   };
 
-  const handleUpdateStatus = async (status) => {
-    if (!delivery || delivery.status === status) {
+  const handleUpdateStatus = async (action) => {
+    if (!delivery || delivery.status === action.status) {
       return;
     }
 
-    if (!availableTransitions.includes(status)) {
-      showToast(
-        'error',
-        `Cannot move from ${statusOptions.find((item) => item.key === delivery.status)?.label || delivery.status} to ${
-          statusOptions.find((item) => item.key === status)?.label || status
-        }.`
-      );
+    if (action.requiresConfirm) {
+      setModalAction(action);
+      setFailureReason('');
       return;
     }
 
-    if (status === 'failed') {
-      setShowFailureDialog(true);
-      return;
-    }
-
-    await submitStatusUpdate({ status });
+    await submitStatusUpdate({ status: action.status });
   };
 
-  const handleFailDelivery = async () => {
-    if (!failureReason.trim()) {
-      showToast('error', 'Please enter a failure reason before confirming.');
-      return;
-    }
-
-    await submitStatusUpdate({ status: 'failed', failureReason: failureReason.trim() });
-  };
+  const assignedRiderLabel = delivery?.agentName || delivery?.agentEmail || 'Awaiting assignment';
 
   return (
     <Layout title="Delivery Detail">
@@ -168,11 +135,16 @@ function DeliveryDetailPage() {
         <header className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Delivery Detail</h1>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Track one delivery and keep status changes inside the required workflow without breaking the demo sequence.</p>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+              Follow one delivery from assignment through completion, with timeline checkpoints and the same rider
+              actions available from the route page.
+            </p>
           </div>
-          <div className="rounded-full border border-emerald-200 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wide text-emerald-700">
-            Next allowed: {availableTransitions.length > 0 ? availableTransitions.map((status) => statusOptions.find((item) => item.key === status)?.label).join(', ') : 'No further transitions'}
-          </div>
+          {!loading && !error && delivery && (
+            <div className="rounded-full border border-emerald-200 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wide text-emerald-700">
+              {isAdmin ? 'Admin View Only' : `${summary.currentStage} / ${progress}%`}
+            </div>
+          )}
         </header>
 
         {loading && (
@@ -189,9 +161,9 @@ function DeliveryDetailPage() {
             </article>
             <article className="rounded-[28px] border border-emerald-100 bg-white/95 p-5 shadow-[0_24px_55px_-36px_rgba(11,28,48,0.42)]">
               <SkeletonBlock className="h-5 w-48" />
-              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                {[1, 2, 3, 4, 5].map((item) => (
-                  <SkeletonBlock key={item} className="h-11 w-full" />
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[1, 2, 3, 4].map((item) => (
+                  <SkeletonBlock key={item} className="h-14 w-full" />
                 ))}
               </div>
             </article>
@@ -214,7 +186,7 @@ function DeliveryDetailPage() {
         {!loading && !error && delivery && (
           <div className="space-y-6">
             <article className="rounded-[28px] border border-emerald-100 bg-white/95 p-5 shadow-[0_24px_55px_-36px_rgba(11,28,48,0.42)]">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Customer</p>
                   <p className="mt-1 text-lg font-semibold text-slate-900">{delivery.customerName}</p>
@@ -224,14 +196,8 @@ function DeliveryDetailPage() {
                   <p className="mt-1 text-lg font-semibold text-slate-900">{delivery.merchantName}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Address</p>
-                  <p className="mt-1 text-sm leading-6 text-slate-700">{delivery.address}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Coordinates</p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Lat: {delivery.coordinates?.lat}, Lng: {delivery.coordinates?.lng}
-                  </p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Assigned Rider</p>
+                  <p className="mt-1 text-sm text-slate-700">{assignedRiderLabel}</p>
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Current Status</p>
@@ -240,12 +206,16 @@ function DeliveryDetailPage() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Created At</p>
-                  <p className="mt-1 text-sm text-slate-700">{formatDate(delivery.createdAt)}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Pickup Address</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-700">{delivery.pickupAddress || delivery.merchantName}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">ETA</p>
-                  <p className="mt-1 text-sm text-slate-700">{delivery.eta}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Drop Address</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-700">{delivery.dropAddress || delivery.address}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Customer Phone</p>
+                  <p className="mt-1 text-sm text-slate-700">{delivery.customerPhone || 'Not provided'}</p>
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Failure Reason</p>
@@ -254,68 +224,169 @@ function DeliveryDetailPage() {
               </div>
             </article>
 
-            <article className="rounded-[28px] border border-emerald-100 bg-white/95 p-5 shadow-[0_24px_55px_-36px_rgba(11,28,48,0.42)]">
-              <h2 className="text-lg font-semibold text-slate-900">Update Delivery Status</h2>
-              <p className="mt-1 text-sm leading-6 text-slate-600">Assigned to Picked Up to Out for Delivery to Delivered. Failed is allowed from any in-progress stage.</p>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+              <article className="rounded-[28px] border border-emerald-100 bg-white/95 p-5 shadow-[0_24px_55px_-36px_rgba(11,28,48,0.42)]">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-700">Route Progress</p>
+                    <h2 className="mt-1 text-lg font-semibold text-slate-900">{summary.currentStage}</h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Completed stops: {summary.completedStops} / Remaining stops: {summary.remainingStops}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
+                    {progress}%
+                  </span>
+                </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                {statusOptions.map((option) => {
-                  const isCurrent = delivery.status === option.key;
-                  const isUpdating = updatingStatus === option.key;
+                <div className="mt-4 h-3 overflow-hidden rounded-full bg-emerald-100">
+                  <div
+                    className="h-full rounded-full bg-[linear-gradient(90deg,#0f7a54,#2fc487)] transition-all duration-500"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
 
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      disabled={isCurrent || Boolean(updatingStatus)}
-                      onClick={() => handleUpdateStatus(option.key)}
-                      className={`rounded-xl px-3 py-2 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 ${statusButtonClasses[option.key]}`}
+                {!isAdmin && actions.length > 0 && (
+                  <div className="mt-5">
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Available Actions</h3>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {actions.map((action) => (
+                        <button
+                          key={action.key}
+                          type="button"
+                          disabled={Boolean(updatingStatus)}
+                          onClick={() => handleUpdateStatus(action)}
+                          className={`rounded-xl px-3 py-2 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 disabled:opacity-60 ${
+                            action.tone === 'rose'
+                              ? 'bg-rose-600 hover:bg-rose-700'
+                              : action.tone === 'amber'
+                                ? 'bg-amber-600 hover:bg-amber-700'
+                                : 'bg-emerald-600 hover:bg-emerald-700'
+                          }`}
+                        >
+                          {updatingStatus === action.status ? 'Saving...' : action.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </article>
+
+              <article className="rounded-[28px] border border-emerald-100 bg-white/95 p-5 shadow-[0_24px_55px_-36px_rgba(11,28,48,0.42)]">
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-700">Timeline</p>
+                <div className="mt-4 space-y-3">
+                  {timelineSteps.map((step) => (
+                    <div
+                      key={step.key}
+                      className={`rounded-2xl border p-4 ${
+                        step.state === 'complete'
+                          ? 'border-emerald-200 bg-emerald-50/70'
+                          : step.state === 'current'
+                            ? 'border-emerald-300 bg-white shadow-[0_14px_30px_-22px_rgba(15,122,84,0.55)]'
+                            : 'border-slate-200 bg-slate-50/70'
+                      }`}
                     >
-                      {isUpdating ? 'Updating...' : isCurrent ? `${option.label} (Current)` : option.label}
-                    </button>
-                  );
-                })}
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-slate-900">{step.label}</p>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {step.state === 'complete' ? 'Done' : step.state === 'current' ? 'Current' : 'Pending'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-600">{step.at ? formatDate(step.at) : 'Waiting for this stage'}</p>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            </div>
+
+            <article className="rounded-[28px] border border-emerald-100 bg-white/95 p-5 shadow-[0_24px_55px_-36px_rgba(11,28,48,0.42)]">
+              <h2 className="text-lg font-semibold text-slate-900">Delivery Metadata</h2>
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Created At</p>
+                  <p className="mt-1 text-sm text-slate-700">{formatDate(delivery.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Assigned At</p>
+                  <p className="mt-1 text-sm text-slate-700">{formatDate(delivery.assignedAt)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Accepted At</p>
+                  <p className="mt-1 text-sm text-slate-700">{formatDate(delivery.acceptedAt)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Reached Pickup At</p>
+                  <p className="mt-1 text-sm text-slate-700">{formatDate(delivery.pickupReachedAt)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Picked Up At</p>
+                  <p className="mt-1 text-sm text-slate-700">{formatDate(delivery.pickedUpAt)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Out for Delivery At</p>
+                  <p className="mt-1 text-sm text-slate-700">{formatDate(delivery.outForDeliveryAt)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Delivered At</p>
+                  <p className="mt-1 text-sm text-slate-700">{formatDate(delivery.deliveredAt)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Failed At</p>
+                  <p className="mt-1 text-sm text-slate-700">{formatDate(delivery.failedAt)}</p>
+                </div>
               </div>
             </article>
           </div>
         )}
       </section>
 
-      {showFailureDialog && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/30 px-4">
-          <div className="w-full max-w-md rounded-[28px] border border-emerald-100 bg-white p-6 shadow-[0_24px_55px_-30px_rgba(11,28,48,0.45)]">
-            <h2 className="text-xl font-semibold text-slate-900">Confirm Failed Delivery</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">A reason is required before this delivery can move into the failed state.</p>
-            <textarea
-              value={failureReason}
-              onChange={(event) => setFailureReason(event.target.value)}
-              rows={4}
-              placeholder="Customer unavailable, blocked access, incorrect address..."
-              className="mt-4 w-full rounded-2xl border border-emerald-200 bg-emerald-50/30 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-emerald-400"
-            />
-            <div className="mt-5 flex flex-wrap justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowFailureDialog(false);
-                  setFailureReason('');
-                }}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleFailDelivery}
-                disabled={Boolean(updatingStatus)}
-                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-60"
-              >
-                {updatingStatus === 'failed' ? 'Saving...' : 'Confirm Failed'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmationModal
+        open={Boolean(modalAction)}
+        title={
+          modalAction?.status === 'rejected'
+            ? 'Reject This Order?'
+            : modalAction?.status === 'delivered'
+              ? 'Confirm Delivery Completion'
+              : modalAction?.status === 'failed'
+                ? 'Mark Delivery Failed?'
+                : 'Confirm Action'
+        }
+        message={
+          modalAction?.status === 'rejected'
+            ? 'Rejecting removes this order from your queue and sends it back to the admin pending pool.'
+            : modalAction?.status === 'delivered'
+              ? 'Confirm that this order has been delivered to the customer.'
+              : modalAction?.status === 'failed'
+                ? 'A failure reason is required so the admin panel and database reflect what happened.'
+                : 'Confirm this workflow action.'
+        }
+        confirmLabel={modalAction?.label || 'Confirm'}
+        tone={modalAction?.tone || 'emerald'}
+        loading={updatingStatus === modalAction?.status}
+        onClose={() => {
+          setModalAction(null);
+          setFailureReason('');
+        }}
+        onConfirm={() =>
+          modalAction &&
+          (modalAction.requiresReason && !failureReason.trim()
+            ? setToast({ type: 'error', message: 'Please enter a failure reason before confirming.' })
+            : submitStatusUpdate({
+                status: modalAction.status,
+                ...(modalAction.requiresReason ? { failureReason: failureReason.trim() } : {}),
+              }))
+        }
+      >
+        {modalAction?.requiresReason && (
+          <textarea
+            value={failureReason}
+            onChange={(event) => setFailureReason(event.target.value)}
+            rows={4}
+            placeholder="Customer unavailable, access denied, incorrect address..."
+            className="mt-4 w-full rounded-2xl border border-emerald-200 bg-emerald-50/30 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-emerald-400"
+          />
+        )}
+      </ConfirmationModal>
     </Layout>
   );
 }

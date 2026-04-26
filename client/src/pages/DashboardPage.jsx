@@ -19,10 +19,11 @@ import Layout from '../components/Layout';
 import SkeletonBlock from '../components/SkeletonBlock';
 import StatCard from '../components/StatCard';
 
-const chartColors = ['#0f7a54', '#2563eb', '#f59e0b', '#e11d48'];
+const chartColors = ['#f59e0b', '#0f7a54', '#2563eb', '#e11d48'];
 const statusLabels = {
-  completed: 'Delivered',
   pending: 'Pending',
+  active: 'Active',
+  completed: 'Delivered',
   failed: 'Failed',
 };
 
@@ -36,8 +37,9 @@ const formatCurrency = (value) =>
 const buildFallbackAnalytics = (deliveries) => {
   const completed = deliveries.filter((delivery) => delivery.status === 'delivered').length;
   const failed = deliveries.filter((delivery) => delivery.status === 'failed').length;
-  const pending = deliveries.filter((delivery) =>
-    ['assigned', 'picked_up', 'out_for_delivery'].includes(delivery.status)
+  const pending = deliveries.filter((delivery) => delivery.status === 'assigned').length;
+  const active = deliveries.filter((delivery) =>
+    ['accepted', 'reached_pickup', 'picked_up', 'out_for_delivery'].includes(delivery.status)
   ).length;
   const earnings = deliveries
     .filter((delivery) => delivery.status === 'delivered')
@@ -47,6 +49,7 @@ const buildFallbackAnalytics = (deliveries) => {
     totalDeliveries: deliveries.length,
     completed,
     pending,
+    active,
     failed,
     earnings,
   };
@@ -157,8 +160,9 @@ function DashboardPage() {
     }
 
     return [
-      { name: statusLabels.completed, value: analytics.completed },
       { name: statusLabels.pending, value: analytics.pending },
+      { name: statusLabels.active, value: analytics.active || 0 },
+      { name: statusLabels.completed, value: analytics.completed },
       { name: statusLabels.failed, value: analytics.failed },
     ];
   }, [analytics]);
@@ -171,14 +175,17 @@ function DashboardPage() {
         <header className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Delivery Dashboard</h1>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Live analytics for your milk-delivery operations with a compact executive view of fulfillment, failures, revenue, and trend movement.</p>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+              Live analytics for your delivery workflow with real counts for waiting orders, active route work, completed
+              drops, failures, and earned revenue.
+            </p>
           </div>
         </header>
 
         {loading && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-              {[1, 2, 3, 4, 5].map((item) => (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
+              {[1, 2, 3, 4, 5, 6].map((item) => (
                 <article key={item} className="rounded-[26px] border border-emerald-100 bg-white/95 p-4 shadow-[0_22px_48px_-34px_rgba(11,28,48,0.42)]">
                   <SkeletonBlock className="h-4 w-24" />
                   <SkeletonBlock className="mt-4 h-10 w-28" />
@@ -211,10 +218,11 @@ function DashboardPage() {
 
         {!loading && !error && analytics && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
               <StatCard label="Total Deliveries" value={analytics.totalDeliveries} accent="emerald" />
-              <StatCard label="Completed" value={analytics.completed} accent="blue" />
               <StatCard label="Pending" value={analytics.pending} accent="amber" />
+              <StatCard label="Active Route" value={analytics.active || 0} accent="emerald" />
+              <StatCard label="Completed" value={analytics.completed} accent="blue" />
               <StatCard label="Failed" value={analytics.failed} accent="rose" />
               <StatCard label="Earnings" value={formatCurrency(analytics.earnings)} accent="emerald" />
             </div>

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  assignAdminDelivery,
   createAdminDelivery,
   getAdminAgents,
   getAnalytics,
@@ -20,6 +21,7 @@ router.get('/summary/today', getTodaySummary);
 router.get('/deliveries', getAssignedDeliveries);
 router.get('/admin/agents', requireAdmin, getAdminAgents);
 router.post('/admin/deliveries', requireAdmin, createAdminDelivery);
+router.patch('/admin/deliveries/:deliveryId/assign', requireAdmin, assignAdminDelivery);
 router.get('/deliveries/:deliveryId', getDeliveryById);
 router.put('/deliveries/:deliveryId/status', updateDeliveryStatus);
 router.patch('/deliveries/:deliveryId/status', updateDeliveryStatus);

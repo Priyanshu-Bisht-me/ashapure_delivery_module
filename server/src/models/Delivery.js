@@ -59,8 +59,17 @@ const deliverySchema = new mongoose.Schema({
   status: {
     type: String,
     required: true,
-    enum: ['assigned', 'picked_up', 'out_for_delivery', 'delivered', 'failed'],
-    default: 'assigned',
+    enum: [
+      'unassigned',
+      'assigned',
+      'accepted',
+      'reached_pickup',
+      'picked_up',
+      'out_for_delivery',
+      'delivered',
+      'failed',
+    ],
+    default: 'unassigned',
   },
   earnings: {
     type: Number,
@@ -80,6 +89,38 @@ const deliverySchema = new mongoose.Schema({
   coordinates: {
     type: coordinatesSchema,
     required: true,
+  },
+  assignedAt: {
+    type: Date,
+    default: null,
+  },
+  acceptedAt: {
+    type: Date,
+    default: null,
+  },
+  rejectedAt: {
+    type: Date,
+    default: null,
+  },
+  pickupReachedAt: {
+    type: Date,
+    default: null,
+  },
+  pickedUpAt: {
+    type: Date,
+    default: null,
+  },
+  outForDeliveryAt: {
+    type: Date,
+    default: null,
+  },
+  deliveredAt: {
+    type: Date,
+    default: null,
+  },
+  failedAt: {
+    type: Date,
+    default: null,
   },
   createdAt: {
     type: Date,
