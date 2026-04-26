@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   assignAdminDelivery,
+  cancelAdminDelivery,
   createAdminDelivery,
   getAdminAgents,
   getAnalytics,
   getAssignedDeliveries,
 } from '../api/deliveryApi';
+import ConfirmationModal from '../components/ConfirmationModal';
 import Layout from '../components/Layout';
 import SkeletonBlock from '../components/SkeletonBlock';
 import StatCard from '../components/StatCard';
@@ -19,9 +21,23 @@ const initialFormState = {
   pickupAddress: '',
   dropAddress: '',
   merchantName: '',
+  assignedRider: '',
   earnings: '',
-  eta: '',
-  assignTo: '',
+  priority: 'normal',
+};
+
+const priorityToneMap = {
+  normal: 'border-slate-200 bg-slate-100 text-slate-700',
+  high: 'border-amber-200 bg-amber-100 text-amber-700',
+  urgent: 'border-rose-200 bg-rose-100 text-rose-700',
+};
+
+const formatPriority = (priority) => {
+  if (!priority) {
+    return 'Normal';
+  }
+
+  return priority.charAt(0).toUpperCase() + priority.slice(1);
 };
 
 function AdminDashboardPage() {
@@ -34,8 +50,10 @@ function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [assigningId, setAssigningId] = useState('');
+  const [cancelingId, setCancelingId] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
 
   const loadAdminData = useCallback(async () => {
     setLoading(true);
@@ -110,7 +128,11 @@ function AdminDashboardPage() {
     }
   }, [location.hash]);
 
-  const recentDeliveries = useMemo(() => deliveries, [deliveries]);
+  const pendingQueue = useMemo(
+    () => deliveries.filter((delivery) => delivery.status === 'unassigned').sort((first, second) => new Date(second.rejectedAt || second.createdAt) - new Date(first.rejectedAt || first.createdAt)),
+    [deliveries]
+  );
+  const recentDeliveries = useMemo(() => deliveries.slice(0, 10), [deliveries]);
   const activeRiders = useMemo(() => agents.filter((agent) => agent.status === 'Active').length, [agents]);
 
   const handleSubmit = async (event) => {
@@ -119,19 +141,18 @@ function AdminDashboardPage() {
     setError('');
 
     try {
-      const created = await createAdminDelivery({
-        ...formState,
+      await createAdminDelivery({
+        customerName: formState.customerName,
+        customerPhone: formState.customerPhone,
+        pickupAddress: formState.pickupAddress,
+        dropAddress: formState.dropAddress,
+        merchantName: formState.merchantName,
+        assignTo: formState.assignedRider || agents[0]?.email || '',
         earnings: Number(formState.earnings),
-        assignTo: formState.assignTo,
+        priority: formState.priority,
       });
 
-      setToast({
-        type: 'success',
-        message:
-          created.status === 'assigned'
-            ? 'Delivery created and assigned successfully.'
-            : 'Delivery created in the pending unassigned pool.',
-      });
+      setToast({ type: 'success', message: 'Delivery created and assigned successfully.' });
       setFormState(initialFormState);
       await loadAdminData();
     } catch (requestError) {
@@ -150,16 +171,48 @@ function AdminDashboardPage() {
     try {
       const assignTo = assignSelections[deliveryId] || agents[0]?.email || '';
       await assignAdminDelivery(deliveryId, { assignTo });
-      setToast({ type: 'success', message: 'Delivery assigned to rider successfully.' });
+      setToast({ type: 'success', message: 'Rider assignment updated successfully.' });
       await loadAdminData();
     } catch (requestError) {
-      const message = requestError.response?.data?.message || 'Unable to assign delivery.';
+      const message = requestError.response?.data?.message || 'Unable to update rider assignment.';
       setError(message);
       setToast({ type: 'error', message });
     } finally {
       setAssigningId('');
     }
   };
+
+  const handleCancelDelivery = async () => {
+    if (!cancelTarget) {
+      return;
+    }
+
+    setCancelingId(cancelTarget._id);
+    setError('');
+
+    try {
+      await cancelAdminDelivery(cancelTarget._id);
+      setToast({ type: 'success', message: 'Delivery cancelled successfully.' });
+      setCancelTarget(null);
+      await loadAdminData();
+    } catch (requestError) {
+      const message = requestError.response?.data?.message || 'Unable to cancel delivery.';
+      setError(message);
+      setToast({ type: 'error', message });
+    } finally {
+      setCancelingId('');
+    }
+  };
+
+  const renderPriorityBadge = (priority) => (
+    <span
+      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+        priorityToneMap[priority] || priorityToneMap.normal
+      }`}
+    >
+      {formatPriority(priority)}
+    </span>
+  );
 
   return (
     <Layout title="Admin Dashboard">
@@ -170,21 +223,21 @@ function AdminDashboardPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Admin Dashboard</h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-              Run the real delivery workflow from one control center: create jobs, assign riders, monitor in-transit
-              work, and review completed or failed outcomes from live backend data.
+              Run dispatch from one control center: create orders, assign riders, recover rejected work, and manage live
+              delivery status without leaving the admin surface.
             </p>
           </div>
           {analytics && (
             <div className="rounded-full border border-emerald-200 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wide text-emerald-700">
-              {analytics.totalDeliveries} total deliveries
+              {activeRiders} active riders
             </div>
           )}
         </header>
 
         {loading && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-              {[1, 2, 3, 4, 5].map((item) => (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
+              {[1, 2, 3, 4, 5, 6].map((item) => (
                 <article key={item} className="rounded-[26px] border border-emerald-100 bg-white/95 p-4 shadow-[0_22px_48px_-34px_rgba(11,28,48,0.42)]">
                   <SkeletonBlock className="h-4 w-24" />
                   <SkeletonBlock className="mt-4 h-10 w-28" />
@@ -227,12 +280,13 @@ function AdminDashboardPage() {
 
         {!loading && !error && analytics && (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-              <StatCard label="Pending Unassigned" value={analytics.pendingUnassigned} accent="amber" />
-              <StatCard label="Accepted Deliveries" value={analytics.accepted} accent="emerald" />
-              <StatCard label="In Transit Deliveries" value={analytics.inTransit} accent="blue" />
-              <StatCard label="Delivered Today" value={analytics.deliveredToday} accent="emerald" />
-              <StatCard label="Failed Deliveries" value={analytics.failed} accent="rose" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
+              <StatCard label="Total Deliveries" value={analytics.totalDeliveries} accent="emerald" />
+              <StatCard label="Pending Orders" value={analytics.pending} accent="amber" />
+              <StatCard label="Accepted Orders" value={analytics.accepted} accent="emerald" />
+              <StatCard label="Delivered Today" value={analytics.deliveredToday} accent="blue" />
+              <StatCard label="Failed Orders" value={analytics.failed} accent="rose" />
+              <StatCard label="Total Riders" value={agents.length} accent="emerald" />
             </div>
 
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.05fr_0.95fr]">
@@ -243,10 +297,10 @@ function AdminDashboardPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-700">Create Delivery</p>
-                    <h2 className="mt-1 text-lg font-semibold text-slate-900">Create assigned or pending work</h2>
+                    <h2 className="mt-1 text-lg font-semibold text-slate-900">Assign a rider immediately</h2>
                   </div>
                   <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                    {activeRiders} active riders
+                    {analytics.pendingUnassigned} in pending queue
                   </div>
                 </div>
 
@@ -295,28 +349,30 @@ function AdminDashboardPage() {
                     onChange={(event) => setFormState((current) => ({ ...current, earnings: event.target.value }))}
                     className="rounded-2xl border border-emerald-200 bg-emerald-50/30 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-emerald-400"
                   />
-                  <input
-                    required
-                    placeholder="ETA"
-                    value={formState.eta}
-                    onChange={(event) => setFormState((current) => ({ ...current, eta: event.target.value }))}
-                    className="rounded-2xl border border-emerald-200 bg-emerald-50/30 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-emerald-400"
-                  />
                   <select
-                    value={formState.assignTo}
-                    onChange={(event) => setFormState((current) => ({ ...current, assignTo: event.target.value }))}
+                    required
+                    value={formState.assignedRider || agents[0]?.email || ''}
+                    onChange={(event) => setFormState((current) => ({ ...current, assignedRider: event.target.value }))}
                     className="rounded-2xl border border-emerald-200 bg-emerald-50/30 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-emerald-400"
                   >
-                    <option value="">Leave Unassigned</option>
                     {agents.map((agent) => (
                       <option key={agent.email} value={agent.email}>
                         {agent.name} ({agent.email})
                       </option>
                     ))}
                   </select>
+                  <select
+                    value={formState.priority}
+                    onChange={(event) => setFormState((current) => ({ ...current, priority: event.target.value }))}
+                    className="rounded-2xl border border-emerald-200 bg-emerald-50/30 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-emerald-400"
+                  >
+                    <option value="normal">Normal Priority</option>
+                    <option value="high">High Priority</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={submitting || agents.length === 0}
                     className="rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-700 disabled:opacity-60 md:col-span-2"
                   >
                     {submitting ? 'Creating Delivery...' : 'Create Delivery'}
@@ -330,7 +386,7 @@ function AdminDashboardPage() {
               >
                 <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-700">Delivery Agents</p>
                 <h2 className="mt-1 text-lg font-semibold text-slate-900">Current rider roster</h2>
-                <p className="mt-2 text-sm text-slate-600">{agents.length} total agents available for assignment.</p>
+                <p className="mt-2 text-sm text-slate-600">{agents.length} total riders available for dispatch.</p>
 
                 <div className="mt-5 space-y-3">
                   {agents.map((agent) => (
@@ -341,10 +397,7 @@ function AdminDashboardPage() {
                           <p className="mt-1 text-sm text-slate-600">{agent.email}</p>
                           <p className="mt-2 text-xs font-medium uppercase tracking-wide text-slate-500">{agent.role}</p>
                         </div>
-                        <StatusBadge
-                          status={agent.status === 'Active' ? 'delivered' : 'assigned'}
-                          label={agent.status}
-                        />
+                        <StatusBadge status={agent.status === 'Active' ? 'delivered' : 'assigned'} label={agent.status} />
                       </div>
                       <p className="mt-3 text-sm text-slate-600">Assigned Deliveries: {agent.assignedDeliveriesCount}</p>
                     </article>
@@ -353,38 +406,47 @@ function AdminDashboardPage() {
               </article>
             </div>
 
-            <article
-              id="recent-deliveries"
-              className="scroll-mt-32 rounded-[28px] border border-emerald-100 bg-white/95 p-5 shadow-[0_24px_55px_-36px_rgba(11,28,48,0.45)]"
-            >
-              <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-700">Recent Deliveries</p>
-              <h2 className="mt-1 text-lg font-semibold text-slate-900">Latest workflow state across all deliveries</h2>
+            <article className="rounded-[28px] border border-emerald-100 bg-white/95 p-5 shadow-[0_24px_55px_-36px_rgba(11,28,48,0.45)]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-700">Pending Queue</p>
+                  <h2 className="mt-1 text-lg font-semibold text-slate-900">Rejected and unassigned orders ready to assign</h2>
+                </div>
+                <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  {pendingQueue.length} pending
+                </div>
+              </div>
 
-              <div className="mt-5 overflow-x-auto">
-                <table className="min-w-full divide-y divide-emerald-100">
-                  <thead className="bg-emerald-50/80">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Customer</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Rider</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Merchant</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Failure</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-emerald-50">
-                    {recentDeliveries.map((delivery) => (
-                      <tr key={delivery._id} className="transition-colors hover:bg-emerald-50/45">
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900">{delivery.customerName}</td>
-                        <td className="px-4 py-3 text-sm text-slate-700">{delivery.agentName || delivery.agentEmail || 'Unassigned'}</td>
-                        <td className="px-4 py-3 text-sm text-slate-700">{delivery.merchantName}</td>
-                        <td className="px-4 py-3">
-                          <StatusBadge status={delivery.status} />
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-700">{delivery.failureReason || '—'}</td>
-                        <td className="px-4 py-3 text-right">
-                          {delivery.status === 'unassigned' ? (
-                            <div className="flex min-w-[250px] justify-end gap-2">
+              {pendingQueue.length === 0 ? (
+                <div className="mt-5 rounded-[24px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                  No deliveries are waiting in the pending queue right now.
+                </div>
+              ) : (
+                <div className="mt-5 overflow-x-auto">
+                  <table className="min-w-full divide-y divide-emerald-100">
+                    <thead className="bg-emerald-50/80">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Customer</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Merchant</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Priority</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Last Event</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-emerald-50">
+                      {pendingQueue.map((delivery) => (
+                        <tr key={delivery._id} className="transition-colors hover:bg-emerald-50/45">
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-medium text-slate-900">{delivery.customerName}</p>
+                            <p className="mt-1 text-xs text-slate-500">{delivery.customerPhone || 'No phone on file'}</p>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700">{delivery.merchantName}</td>
+                          <td className="px-4 py-3">{renderPriorityBadge(delivery.priority)}</td>
+                          <td className="px-4 py-3 text-sm text-slate-700">
+                            {delivery.rejectedAt ? 'Returned by rider' : 'Awaiting assignment'}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex min-w-[320px] justify-end gap-2">
                               <select
                                 value={assignSelections[delivery._id] || agents[0]?.email || ''}
                                 onChange={(event) =>
@@ -409,13 +471,102 @@ function AdminDashboardPage() {
                               >
                                 {assigningId === delivery._id ? 'Assigning...' : 'Assign Rider'}
                               </button>
+                              <button
+                                type="button"
+                                disabled={Boolean(cancelingId)}
+                                onClick={() => setCancelTarget(delivery)}
+                                className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:opacity-60"
+                              >
+                                Cancel Order
+                              </button>
                             </div>
-                          ) : (
-                            <span className="text-sm text-slate-500">{delivery.eta}</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </article>
+
+            <article
+              id="recent-deliveries"
+              className="scroll-mt-32 rounded-[28px] border border-emerald-100 bg-white/95 p-5 shadow-[0_24px_55px_-36px_rgba(11,28,48,0.45)]"
+            >
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-700">Recent Deliveries</p>
+              <h2 className="mt-1 text-lg font-semibold text-slate-900">Live operational view across the latest orders</h2>
+
+              <div className="mt-5 overflow-x-auto">
+                <table className="min-w-full divide-y divide-emerald-100">
+                  <thead className="bg-emerald-50/80">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Customer</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Rider</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Priority</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Notes</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.22em] text-emerald-800">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-emerald-50">
+                    {recentDeliveries.map((delivery) => {
+                      const canManage = !['delivered', 'failed'].includes(delivery.status);
+
+                      return (
+                        <tr key={delivery._id} className="transition-colors hover:bg-emerald-50/45">
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-medium text-slate-900">{delivery.customerName}</p>
+                            <p className="mt-1 text-xs text-slate-500">{delivery.merchantName}</p>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700">{delivery.agentName || delivery.agentEmail || 'Unassigned'}</td>
+                          <td className="px-4 py-3">{renderPriorityBadge(delivery.priority)}</td>
+                          <td className="px-4 py-3">
+                            <StatusBadge status={delivery.status} />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-700">{delivery.failureReason || delivery.eta || '-'}</td>
+                          <td className="px-4 py-3 text-right">
+                            {canManage ? (
+                              <div className="flex min-w-[320px] justify-end gap-2">
+                                <select
+                                  value={assignSelections[delivery._id] || delivery.agentEmail || agents[0]?.email || ''}
+                                  onChange={(event) =>
+                                    setAssignSelections((current) => ({
+                                      ...current,
+                                      [delivery._id]: event.target.value,
+                                    }))
+                                  }
+                                  className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-emerald-400"
+                                >
+                                  {agents.map((agent) => (
+                                    <option key={agent.email} value={agent.email}>
+                                      {agent.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  disabled={assigningId === delivery._id || agents.length === 0}
+                                  onClick={() => handleAssignDelivery(delivery._id)}
+                                  className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-60"
+                                >
+                                  {assigningId === delivery._id ? 'Saving...' : 'Reassign Rider'}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(cancelingId)}
+                                  onClick={() => setCancelTarget(delivery)}
+                                  className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:opacity-60"
+                                >
+                                  Cancel Order
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-slate-500">Terminal order</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -423,6 +574,17 @@ function AdminDashboardPage() {
           </>
         )}
       </section>
+
+      <ConfirmationModal
+        open={Boolean(cancelTarget)}
+        title="Cancel This Order?"
+        message="This removes the delivery from MongoDB and from all rider/admin workflow views. Use this only for orders that should no longer be fulfilled."
+        confirmLabel="Confirm Cancel"
+        tone="rose"
+        loading={cancelingId === cancelTarget?._id}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={handleCancelDelivery}
+      />
     </Layout>
   );
 }

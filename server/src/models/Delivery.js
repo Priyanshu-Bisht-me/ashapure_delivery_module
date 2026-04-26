@@ -45,6 +45,11 @@ const deliverySchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
+  priority: {
+    type: String,
+    enum: ['normal', 'high', 'urgent'],
+    default: 'normal',
+  },
   agentName: {
     type: String,
     default: '',

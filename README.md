@@ -1,73 +1,123 @@
 # Aasapure Delivery Module
 
-A demo-ready delivery operations module for Aasapure with analytics, workflow controls, route tracking, and MongoDB-backed persistence.
+## Project Overview
 
-## Features
+A MERN delivery operations module for dispatch teams and riders. Admins can create and assign deliveries, riders can accept and complete them through a real workflow, and analytics update from MongoDB-backed state changes.
 
-- Dashboard analytics
-- Delivery workflow management
-- Route tracking
-- MongoDB persistence
-- Charts
-- Responsive UI
+## Features Implemented
+
+- JWT-based login for `admin` and `agent` roles
+- Role-based navigation and protected routes
+- Admin control center at `/admin`
+- Delivery creation with rider assignment and priority
+- Pending queue for rejected and unassigned deliveries
+- Rider accept, reject, pickup, transit, delivered, and failed workflow actions
+- Route page with real action-based progress instead of demo timers
+- Delivery detail timeline with persisted timestamps
+- Dashboard analytics and summary metrics driven by live delivery records
+- Retry, error, loading, and empty states across key pages
 
 ## Tech Stack
 
-- React
+- React 19
 - Vite
+- Tailwind CSS
 - Node.js
 - Express
-- MongoDB Atlas
+- MongoDB with Mongoose
+- JWT authentication
 - Recharts
 
-## Setup
+## Setup Steps
 
-### Backend
+### 1. Install dependencies
 
 ```bash
 cd server
 npm install
-npm run dev
-```
 
-### Frontend
-
-```bash
-cd client
+cd ../client
 npm install
-npm run dev
 ```
 
-## Environment Variables
+### 2. Configure environment variables
 
-### Backend
+Backend `.env`
 
 ```env
 PORT=5000
-MONGO_URI=your_mongodb_atlas_connection_string
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_jwt_secret
 ```
 
-### Frontend
+Frontend `.env`
 
 ```env
 VITE_API_BASE_URL=http://localhost:5000/api
 ```
 
+### 3. Start the project
+
+Backend:
+
+```bash
+cd server
+npm run dev
+```
+
+Frontend:
+
+```bash
+cd client
+npm run dev
+```
+
+## Routes
+
+Frontend routes:
+
+- `/login`
+- `/signup`
+- `/dashboard`
+- `/admin`
+- `/assigned-deliveries`
+- `/route`
+- `/summary`
+- `/delivery/:deliveryId`
+
+API routes:
+
+- `POST /api/login`
+- `POST /api/signup`
+- `GET /api/me`
+- `GET /api/analytics`
+- `GET /api/summary`
+- `GET /api/deliveries`
+- `GET /api/deliveries/:deliveryId`
+- `PUT /api/deliveries/:deliveryId/status`
+- `GET /api/admin/agents`
+- `POST /api/admin/deliveries`
+- `PATCH /api/admin/deliveries/:deliveryId/assign`
+- `DELETE /api/admin/deliveries/:deliveryId`
+
 ## Demo Credentials
 
-No login or demo credentials are required.
+- Admin: `admin@aasapure.com` / `admin123`
+- Rider 1: `agent1@aasapure.com` / `agent123`
+- Rider 2: `agent2@aasapure.com` / `agent123`
 
 ## Workflow States
 
-Assigned -> Picked Up -> Out for Delivery -> Delivered / Failed
+- `Unassigned`
+- `Assigned`
+- `Accepted`
+- `Rejected`
+- `Reached Pickup`
+- `Picked Up`
+- `Out for Delivery`
+- `Delivered`
+- `Failed`
 
-## Project Structure
+Note:
 
-- `client/` - React + Vite frontend
-- `server/` - Express + MongoDB API
-
-## Notes
-
-- The route page uses a Google Maps embed iframe and does not require a Google Maps API key.
-- Delivery status rules are enforced in both the UI and backend.
-- MongoDB Atlas is required for persistent demo data.
+Rejecting an order returns it to `Unassigned` and records `rejectedAt` so admins can reassign it from the pending queue.

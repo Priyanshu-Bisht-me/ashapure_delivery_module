@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   assignAdminDelivery,
   createAdminDelivery,
+  deleteAdminDelivery,
   getAdminAgents,
   getAnalytics,
   getAssignedDeliveries,
@@ -22,6 +23,7 @@ router.get('/deliveries', getAssignedDeliveries);
 router.get('/admin/agents', requireAdmin, getAdminAgents);
 router.post('/admin/deliveries', requireAdmin, createAdminDelivery);
 router.patch('/admin/deliveries/:deliveryId/assign', requireAdmin, assignAdminDelivery);
+router.delete('/admin/deliveries/:deliveryId', requireAdmin, deleteAdminDelivery);
 router.get('/deliveries/:deliveryId', getDeliveryById);
 router.put('/deliveries/:deliveryId/status', updateDeliveryStatus);
 router.patch('/deliveries/:deliveryId/status', updateDeliveryStatus);

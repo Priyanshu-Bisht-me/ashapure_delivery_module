@@ -42,6 +42,12 @@ const statusAliases = {
   failed: 'failed',
 };
 
+const PRIORITY_ETA_MAP = {
+  normal: '35 mins',
+  high: '25 mins',
+  urgent: '15 mins',
+};
+
 const buildRangeForToday = () => {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -75,6 +81,15 @@ const normalizeStatus = (status) => {
 
   const normalizedKey = status.trim().toLowerCase().replace(/-/g, ' ');
   return statusAliases[normalizedKey] || '';
+};
+
+const normalizePriority = (priority) => {
+  if (typeof priority !== 'string') {
+    return 'normal';
+  }
+
+  const normalizedPriority = priority.trim().toLowerCase();
+  return ['normal', 'high', 'urgent'].includes(normalizedPriority) ? normalizedPriority : 'normal';
 };
 
 const buildScopedFilter = (user) => {
@@ -431,13 +446,13 @@ export const createAdminDelivery = async (req, res) => {
     const pickupAddress = String(req.body?.pickupAddress || '').trim();
     const dropAddress = String(req.body?.dropAddress || '').trim();
     const merchantName = String(req.body?.merchantName || '').trim();
-    const eta = String(req.body?.eta || '').trim();
     const earnings = Number(req.body?.earnings);
     const assignTo = String(req.body?.assignTo || '').trim().toLowerCase();
+    const priority = normalizePriority(req.body?.priority);
 
-    if (!customerName || !customerPhone || !pickupAddress || !dropAddress || !merchantName || !eta) {
+    if (!customerName || !customerPhone || !pickupAddress || !dropAddress || !merchantName || !assignTo) {
       return res.status(400).json({
-        message: 'All delivery form fields are required.',
+        message: 'Customer, pickup, drop, merchant, earnings, and assigned rider are required.',
       });
     }
 
@@ -451,7 +466,7 @@ export const createAdminDelivery = async (req, res) => {
       ? await User.findOne({ email: assignTo, role: 'agent' }).select('name email role')
       : null;
 
-    if (assignTo && !assignedAgent) {
+    if (!assignedAgent) {
       return res.status(400).json({
         message: 'Assigned rider was not found.',
       });
@@ -466,16 +481,17 @@ export const createAdminDelivery = async (req, res) => {
       dropAddress,
       address: dropAddress,
       merchantName,
-      agentName: assignedAgent?.name || '',
-      agentEmail: assignedAgent?.email || '',
-      status: assignedAgent ? 'assigned' : 'unassigned',
+      priority,
+      agentName: assignedAgent.name,
+      agentEmail: assignedAgent.email,
+      status: 'assigned',
       earnings,
-      eta,
+      eta: PRIORITY_ETA_MAP[priority],
       coordinates: {
         lat: 0,
         lng: 0,
       },
-      assignedAt: assignedAgent ? createdAt : null,
+      assignedAt: createdAt,
     });
 
     return res.status(201).json(delivery);
@@ -516,9 +532,9 @@ export const assignAdminDelivery = async (req, res) => {
       });
     }
 
-    if (!['unassigned', 'assigned'].includes(delivery.status)) {
+    if (['delivered', 'failed'].includes(delivery.status)) {
       return res.status(400).json({
-        message: 'Only pending deliveries can be assigned from the admin panel.',
+        message: 'Completed or failed deliveries cannot be reassigned.',
       });
     }
 
@@ -528,7 +544,7 @@ export const assignAdminDelivery = async (req, res) => {
       agentName: assignedAgent.name,
       agentEmail: assignedAgent.email,
       status: 'assigned',
-      eta: delivery.eta || 'Awaiting acceptance',
+      eta: PRIORITY_ETA_MAP[normalizePriority(delivery.priority)] || delivery.eta || 'Awaiting acceptance',
       failureReason: '',
       assignedAt,
       rejectedAt: null,
@@ -545,6 +561,40 @@ export const assignAdminDelivery = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: 'Failed to assign delivery.',
+      error: error.message,
+    });
+  }
+};
+
+export const deleteAdminDelivery = async (req, res) => {
+  if (!isDatabaseConnected()) {
+    return sendDatabaseUnavailable(res);
+  }
+
+  try {
+    const delivery = await Delivery.findById(req.params.deliveryId);
+
+    if (!delivery) {
+      return res.status(404).json({
+        message: 'Delivery not found.',
+      });
+    }
+
+    if (['delivered', 'failed'].includes(delivery.status)) {
+      return res.status(400).json({
+        message: 'Delivered or failed deliveries cannot be cancelled.',
+      });
+    }
+
+    await Delivery.deleteOne({ _id: delivery._id });
+
+    return res.status(200).json({
+      ok: true,
+      message: 'Delivery cancelled successfully.',
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to cancel delivery.',
       error: error.message,
     });
   }

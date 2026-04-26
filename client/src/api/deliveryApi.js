@@ -40,3 +40,8 @@ export const assignAdminDelivery = async (deliveryId, payload) => {
   const response = await axiosClient.patch(`/admin/deliveries/${deliveryId}/assign`, payload);
   return response.data;
 };
+
+export const cancelAdminDelivery = async (deliveryId) => {
+  const response = await axiosClient.delete(`/admin/deliveries/${deliveryId}`);
+  return response.data;
+};
