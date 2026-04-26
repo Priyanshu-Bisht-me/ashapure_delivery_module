@@ -25,3 +25,13 @@ export const getTodaySummary = async () => {
   const response = await axiosClient.get('/summary');
   return response.data;
 };
+
+export const getAdminAgents = async () => {
+  const response = await axiosClient.get('/admin/agents');
+  return response.data;
+};
+
+export const createAdminDelivery = async (payload) => {
+  const response = await axiosClient.post('/admin/deliveries', payload);
+  return response.data;
+};

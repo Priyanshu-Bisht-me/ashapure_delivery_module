@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import authRoutes from './routes/authRoutes.js';
 import deliveryRoutes from './routes/deliveryRoutes.js';
 import systemRoutes from './routes/systemRoutes.js';
 
@@ -9,6 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api', systemRoutes);
+app.use('/api', authRoutes);
 app.use('/api', deliveryRoutes);
 
 app.use((req, res) => {

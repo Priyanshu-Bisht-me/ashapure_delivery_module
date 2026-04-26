@@ -173,9 +173,6 @@ function DashboardPage() {
             <h1 className="text-2xl font-bold text-slate-900">Delivery Dashboard</h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">Live analytics for your milk-delivery operations with a compact executive view of fulfillment, failures, revenue, and trend movement.</p>
           </div>
-          <div className="rounded-full border border-emerald-200 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wide text-emerald-700">
-            Demo insights powered by live delivery data
-          </div>
         </header>
 
         {loading && (

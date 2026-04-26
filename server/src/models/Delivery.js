@@ -25,9 +25,35 @@ const deliverySchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
+  customerPhone: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  pickupAddress: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  dropAddress: {
+    type: String,
+    default: '',
+    trim: true,
+  },
   merchantName: {
     type: String,
     required: true,
+    trim: true,
+  },
+  agentName: {
+    type: String,
+    default: '',
+    trim: true,
+  },
+  agentEmail: {
+    type: String,
+    default: '',
+    lowercase: true,
     trim: true,
   },
   status: {

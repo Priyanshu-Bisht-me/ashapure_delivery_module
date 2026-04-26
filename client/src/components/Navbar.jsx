@@ -1,4 +1,5 @@
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/useAuth';
 
 const navLinks = [
   { label: 'Dashboard', to: '/' },
@@ -13,6 +14,14 @@ const navLinkClass = ({ isActive }) =>
     : 'rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-slate-600 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-50 hover:text-emerald-800';
 
 function Navbar({ title }) {
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true });
+  };
+
   return (
     <header className="sticky top-0 z-20 border-b border-emerald-100/80 bg-white/88 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:px-8">
@@ -21,16 +30,22 @@ function Navbar({ title }) {
             <Link to="/" className="text-lg font-extrabold tracking-tight text-emerald-700 sm:text-xl">
               Aasapure Delivery Module
             </Link>
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
-              Demo Ready
-            </span>
             <span className="hidden rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-700 sm:block">
               {title}
             </span>
           </div>
-          <p className="hidden text-right text-xs font-medium text-slate-500 lg:block">
-            Dairy delivery analytics, routing, and workflow control
-          </p>
+          <div className="flex items-center gap-2">
+            <div className="hidden rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 md:block">
+              {user?.role === 'admin' ? 'Admin' : 'Delivery Agent'}
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-3">
@@ -41,9 +56,7 @@ function Navbar({ title }) {
               </NavLink>
             ))}
           </nav>
-          <span className="hidden rounded-full border border-emerald-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 md:block">
-            Live Atlas Data
-          </span>
+          <span className="hidden text-xs font-medium text-slate-500 lg:block">{user?.name || 'Signed In'}</span>
         </div>
       </div>
     </header>

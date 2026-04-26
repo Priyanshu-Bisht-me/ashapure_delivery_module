@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import app from './app.js';
+import { ensureDeliveryAssignments, ensureDemoUsers } from './utils/bootstrapData.js';
 import connectDB from './config/db.js';
 
 dotenv.config();
@@ -11,6 +12,9 @@ const startServer = async () => {
 
   if (!isDbConnected) {
     console.warn('Starting API without an active MongoDB connection.');
+  } else {
+    await ensureDemoUsers();
+    await ensureDeliveryAssignments();
   }
 
   app.listen(PORT, () => {
